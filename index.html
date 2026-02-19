@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CyberCoin Diamond Edition</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: radial-gradient(circle, #1a1a2e 0%, #0f0f1f 100%);
+            overflow: hidden;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Пропускает клики к игре */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+            z-index: 10;
+        }
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 10px 20px;
+            color: white;
+            display: inline-block;
+            pointer-events: auto;
+        }
+        .user-info { font-weight: bold; color: #00d2ff; }
+        .balance { font-size: 24px; color: #00ffaa; text-shadow: 0 0 10px #00ffaa; }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div>
+            <div class="stat-card">
+                <div id="user-name" class="user-info">Loading...</div>
+                <div id="user-balance" class="balance">0 $CC</div>
+            </div>
+        </div>
+        <div style="text-align: center;">
+            <div class="stat-card" style="font-size: 12px; opacity: 0.7;">
+                TAP TO MINE • BOOSTS COMING SOON
+            </div>
+        </div>
+    </div>
+
+    <div id="game-container"></div>
+
+    <script>
+        // Инициализация Telegram WebApp
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.enableClosingConfirmation();
+        
+        // Применяем цвета темы Telegram
+        document.getElementById('user-name').innerText = tg.initDataUnsafe.user?.first_name || "Cyber Miner";
+
+        // Конфигурация игры
+        const config = {
+            type: Phaser.AUTO,
+            width: window.innerWidth,
+            height: window.innerHeight,
+            parent: 'game-container',
+            transparent: true,
+            physics: {
+                default: 'arcade',
+                arcade: { gravity: { y: 600 }, debug: false }
+            },
+            scene: { preload, create }
+        };
+
+        const game = new Phaser.Game(config);
+        let balance = localStorage.getItem('balance') ? parseInt(localStorage.getItem('balance')) : 0;
+
+        function preload() {
+            // Используем плейсхолдер для монеты (в идеале заменить на свой .png)
+            this.load.image('particle', 'https://labs.phaser.io/assets/particles/blue.png');
+            this.load.image('main_coin', 'https://labs.phaser.io/assets/sprites/sphere.png');
+        }
+
+        function create() {
+            const screenCenterY = config.height / 2;
+            const screenCenterX = config.width / 2;
+
+            // Обновляем текст баланса при загруз +
+            updateBalanceUI();
+
+            // Создаем главную кнопку-монету
+            const mainButton = this.add.image(screenCenterX, screenCenterY, 'main_coin')
+                .setInteractive()
+                .setScale(0.8);
+
+            // Эффект пульсации
+            this.tweens.add({
+                targets: mainButton,
+                scale: 0.85,
+                duration: 1000,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut'
+            });
+
+            // Логика клика
+            mainButton.on('pointerdown', (pointer) => {
+                // 1. Увеличиваем баланс
+                balance += 1;
+                updateBalanceUI();
+                localStorage.setItem('balance', balance);
+
+                // 2. Анимация нажатия
+                this.tweens.add({
+                    targets: mainButton,
+                    scale: 0.7,
+                    duration: 50,
+                    yoyo: true,
+                    ease: 'Power1'
+                });
+
+                // 3. Вылет текста +1
+                const floatingText = this.add.text(pointer.x, pointer.y - 50, "+1", {
+                    fontSize: '40px',
+                    color: '#00ffaa',
+                    fontStyle: 'bold'
+                });
+                
+                this.tweens.add({
+                    targets: floatingText,
+                    y: pointer.y - 150,
+                    alpha: 0,
+                    duration: 800,
+                    onComplete: () => floatingText.destroy()
+                });
+
+                // 4. Эффект частиц
+                const emitter = this.add.particles(pointer.x, pointer.y, 'particle', {
+                    speed: { min: -100, max: 100 },
+                    angle: { min: 0, max: 360 },
+                    scale: { start: 0.1, end: 0 },
+                    blendMode: 'ADD',
+                    lifespan: 500,
+                    gravityY: 0,
+                    quantity: 5
+                });
+                setTimeout(() => emitter.destroy(), 500);
+
+                // 5. Вибрация (Haptic)
+                if (tg.HapticFeedback) {
+                    tg.HapticFeedback.impactOccurred('light');
+                }
+            });
+        }
+
+        function updateBalanceUI() {
+            document.getElementById('user-balance').innerText = balance.toLocaleString() + " $CC";
+        }
+
+        // Подгонка размера при повороте экрана
+        window.addEventListener('resize', () => {
+            game.scale.resize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
