@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Telegram RPG</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+/* Цвета для редкости */
+.common { color: #aaaaaa; } /* Серый - обычный */
+.rare { color: #3498db; font-weight: bold; } /* Синий - редкий */
+.epic { color: #9b59b6; font-weight: bold; text-shadow: 0 0 5px #9b59b6; } /* Фиолетовый - эпик */
+    </style>
+</head>
+<body>
+  
+  <button onclick="startHunt()" style="background: #e74c3c; color: white;">В лес на охоту! ⚔️</button>
+
+  
+    <button id="inventory-btn" onclick="toggleInventory()">Рюкзак 🎒</button>
+    
+    function renderInventory() {
+    const list = document.getElementById('inventory-list');
+    const title = document.querySelector('#inventory-screen h3');
+    
+    // Очищаем список перед перерисовкой
+    list.innerHTML = '';
+    
+    // Обновляем заголовок с количеством предметов
+    title.innerText = `Ваши вещи (${inventory.length}/${maxSlots}):`;
+
+    // Рисуем каждый предмет
+    inventory.forEach((item, index) => {
+        const li = document.createElement('li');
+        li.className = 'loot-item';
+        
+        // Создаем текст с названием (цветом редкости) и ценой
+        li.innerHTML = `
+            <span class="${item.rarity}">${item.name}</span> 
+            <span>${item.value} 💰</span>
+        `;
+        
+        list.appendChild(li);
+    });
+}
+
+function addItemToInventory(itemKey) {
+    const item = items[itemKey]; // Находим данные предмета по ключу
+    
+    if (inventory.length < maxSlots) {
+        inventory.push(item);
+        console.log(`Добавлено: ${item.name}`);
+        
+        // Если это эпический предмет, можно добавить эффект
+        if (item.rarity === 'epic') {
+            tg.HapticFeedback.notificationOccurred('success'); // Легкая вибрация Telegram
+        }
+        
+        renderInventory(); // Перерисовываем рюкзак, чтобы увидеть обновку
+        return true;
+    } else {
+        tg.showAlert("Рюкзак полон! 🎒🚫");
+        return false;
+    }
+}
+// Функция сохранения
+function saveGame() {
+    const gameData = {
+        inventory: inventory,
+        gold: gold,
+        hp: hp
+    };
+    // Превращаем объект в строку и кладем в память
+    localStorage.setItem('myRpgSave', JSON.stringify(gameData));
+    console.log("Игра сохранена! 💾");
+}
+
+// Функция загрузки
+function loadGame() {
+    const saved = localStorage.getItem('myRpgSave');
+    if (saved) {
+        const data = JSON.parse(saved);
+        inventory = data.inventory || [];
+        gold = data.gold || 0;
+        hp = data.hp || 100;
+        renderInventory(); // Сразу обновляем экран
+        console.log("Данные загружены! ✅");
+    }
+}
+
+// Вызываем загрузку при старте
+loadGame();
+
+    <script>
+const tg = window.Telegram.WebApp;
+tg.expand(); // Разворачиваем приложение на весь экран
+
+// 🎒 Данные игрока
+let inventory = []; 
+const maxSlots = 20;
+let hp = 100;
+let gold = 0;
+
+// 📦 Справочник предметов (наша база данных)
+const items = {
+    'wolf_tooth': { name: "Волчий клык 🦷", rarity: "common", value: 5 },
+    'wolf_hide': { name: "Шкура волка 🐺", rarity: "common", value: 12 },
+    'old_ring': { name: "Старое кольцо 💍", rarity: "rare", value: 50 },
+    'junk': { name: "Обломки костей 🦴", rarity: "common", value: 1 }
+};
+
+// ✨ Функция для проверки места в рюкзаке
+function canAddItem() {
+    return inventory.length < maxSlots;
+}
+
+console.log("Мозг игры запущен! Рюкзак готов.");
+
+function toggleInventory() {
+    const screen = document.getElementById('inventory-screen');
+    // Если окно скрыто — показываем, если открыто — прячем
+    if (screen.style.display === 'none') {
+        screen.style.display = 'block';
+        renderInventory(); // Функция, которую мы напишем следующей
+    } else {
+        screen.style.display = 'none';
+    }
+}
+
+// Функция охоты
+function startHunt() {
+    // Таблица шансов для волка
+    const wolfLoot = [
+        { id: 'wolf_tooth', chance: 0.7 },
+        { id: 'wolf_hide', chance: 0.4 },
+        { id: 'old_ring', chance: 0.1 }
+    ];
+
+    let dropped = [];
+    
+    // Проверяем каждый предмет на шанс выпадения
+    wolfLoot.forEach(item => {
+        if (Math.random() < item.chance) {
+            dropped.push({ ...items[item.id], id: item.id });
+        }
+    });
+
+    // Гарантированный минимальный лут, если ничего не выпало
+    if (dropped.length === 0) {
+        dropped.push({ ...items['junk'], id: 'junk' });
+    }
+
+    showLootWindow(dropped);
+}
+
+function showLootWindow(droppedItems) {
+    const lootWindow = document.getElementById('loot-window');
+    const lootList = document.getElementById('loot-list');
+    
+    lootList.innerHTML = ''; // Очищаем старый список
+    lootWindow.style.display = 'block'; // Показываем окно
+
+    droppedItems.forEach((item, index) => {
+        const div = document.createElement('div');
+        div.className = 'loot-item';
+        div.innerHTML = `
+            <span class="${item.rarity}">${item.name} (${item.value}💰)</span>
+            <button onclick="takeItem('${item.id}', this)">Взять</button>
+        `;
+        lootList.appendChild(div);
+    });
+}
+
+// Функция подбора конкретного предмета
+function takeItem(itemKey, button) {
+    if (addItemToInventory(itemKey)) {
+        button.disabled = true;
+        button.innerText = "Взято";
+        saveGame(); // Сохраняем прогресс сразу после подбора!
+    }
+}
+
+// Закрытие окна
+function closeLoot() {
+    document.getElementById('loot-window').style.display = 'none';
+}
+
+    </script>
+    
+    <div id="inventory-screen" style="display: none; border: 1px solid #ccc; padding: 10px; margin-top: 10px;">
+    <h3>Ваши вещи (0/20):</h3>
+    <ul id="inventory-list"></ul>
+</div>
+
+</body>
+</html>
