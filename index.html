@@ -3,175 +3,205 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>CyberCoin Diamond Edition</title>
+    <title>CyberState Enterprise Mini App</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background: radial-gradient(circle, #1a1a2e 0%, #0f0f1f 100%);
-            overflow: hidden;
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        :root {
+            --accent: #00f2ff;
+            --gold: #ffcc00;
         }
-        #ui-layer {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none; /* Пропускает клики к игре */
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            padding: 20px;
-            box-sizing: border-box;
-            z-index: 10;
+        body { margin: 0; background: #05050a; overflow: hidden; font-family: 'Inter', sans-serif; }
+        
+        /* Слой интерфейса (UI) */
+        #ui {
+            position: absolute; width: 100%; height: 100%; 
+            pointer-events: none; z-index: 100;
+            display: flex; flex-direction: column; align-items: center;
         }
-        .stat-card {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
+
+        .header {
+            width: 90%; margin-top: 20px;
+            display: flex; justify-content: space-between;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(15px);
             border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 15px;
-            padding: 10px 20px;
-            color: white;
-            display: inline-block;
-            pointer-events: auto;
+            border-radius: 20px;
+            padding: 15px; color: white; pointer-events: auto;
         }
-        .user-info { font-weight: bold; color: #00d2ff; }
-        .balance { font-size: 24px; color: #00ffaa; text-shadow: 0 0 10px #00ffaa; }
+
+        .balance-container { text-align: center; margin-top: 40px; }
+        .balance-value { font-size: 48px; font-weight: 900; color: var(--accent); text-shadow: 0 0 20px rgba(0,242,255,0.5); }
+        .pps { font-size: 14px; color: #888; letter-spacing: 2px; }
+
+        .footer-nav {
+            position: absolute; bottom: 30px; width: 90%;
+            display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;
+        }
+
+        .nav-item {
+            background: rgba(255,255,255,0.05); border: none; border-radius: 12px;
+            color: white; padding: 12px; font-weight: bold; cursor: pointer;
+            transition: 0.2s;
+        }
+        .nav-item:active { transform: scale(0.95); background: var(--accent); color: black; }
     </style>
 </head>
 <body>
 
-    <div id="ui-layer">
-        <div>
-            <div class="stat-card">
-                <div id="user-name" class="user-info">Loading...</div>
-                <div id="user-balance" class="balance">0 $CC</div>
-            </div>
+    <div id="ui">
+        <div class="header">
+            <div class="glass-panel" id="user-display">@User</div>
+            <div class="glass-panel" style="color: var(--gold)">🏆 Top 1%</div>
         </div>
-        <div style="text-align: center;">
-            <div class="stat-card" style="font-size: 12px; opacity: 0.7;">
-                TAP TO MINE • BOOSTS COMING SOON
-            </div>
+
+        <div class="balance-container">
+            <div id="balance" class="balance-value">0</div>
+            <div id="pps" class="pps">PROFITS: +0.0/s</div>
+        </div>
+
+        <div class="footer-nav">
+            <button class="nav-item" onclick="upgrade('click')">⚡️ TAP</button>
+            <button class="nav-item" onclick="upgrade('auto')">🤖 AUTO</button>
+            <button class="nav-item" onclick="tg.openLink('https://t.me/your_channel')">📢 JOIN</button>
         </div>
     </div>
 
-    <div id="game-container"></div>
+    <div id="game"></div>
 
-    <script>
-        // Инициализация Telegram WebApp
-        const tg = window.Telegram.WebApp;
-        tg.expand();
-        tg.enableClosingConfirmation();
+<script>
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+
+    // Глобальное состояние (State Management)
+    let state = {
+        balance: parseFloat(localStorage.getItem('bal')) || 0,
+        clickPower: parseInt(localStorage.getItem('cp')) || 1,
+        autoPower: parseFloat(localStorage.getItem('ap')) || 0,
+        lastTick: Date.now()
+    };
+
+    // Конфигурация движка
+    const config = {
+        type: Phaser.AUTO,
+        parent: 'game',
+        width: window.innerWidth,
+        height: window.innerHeight,
+        transparent: true,
+        scene: { preload, create, update }
+    };
+
+    const game = new Phaser.Game(config);
+    let coin, particles, emitter;
+
+    function preload() {
+        // Загрузка высококачественных ассетов
+        this.load.image('coin', 'https://cdn-icons-png.flaticon.com/512/5968/5968301.png'); // Замени на свой лого
+        this.load.image('spark', 'https://labs.phaser.io/assets/particles/blue.png');
+    }
+
+    function create() {
+        const { width, height } = this.scale;
         
-        // Применяем цвета темы Telegram
-        document.getElementById('user-name').innerText = tg.initDataUnsafe.user?.first_name || "Cyber Miner";
-
-        // Конфигурация игры
-        const config = {
-            type: Phaser.AUTO,
-            width: window.innerWidth,
-            height: window.innerHeight,
-            parent: 'game-container',
-            transparent: true,
-            physics: {
-                default: 'arcade',
-                arcade: { gravity: { y: 600 }, debug: false }
-            },
-            scene: { preload, create }
-        };
-
-        const game = new Phaser.Game(config);
-        let balance = localStorage.getItem('balance') ? parseInt(localStorage.getItem('balance')) : 0;
-
-        function preload() {
-            // Используем плейсхолдер для монеты (в идеале заменить на свой .png)
-            this.load.image('particle', 'https://labs.phaser.io/assets/particles/blue.png');
-            this.load.image('main_coin', 'https://labs.phaser.io/assets/sprites/sphere.png');
-        }
-
-        function create() {
-            const screenCenterY = config.height / 2;
-            const screenCenterX = config.width / 2;
-
-            // Обновляем текст баланса при загруз +
-            updateBalanceUI();
-
-            // Создаем главную кнопку-монету
-            const mainButton = this.add.image(screenCenterX, screenCenterY, 'main_coin')
-                .setInteractive()
-                .setScale(0.8);
-
-            // Эффект пульсации
-            this.tweens.add({
-                targets: mainButton,
-                scale: 0.85,
-                duration: 1000,
-                yoyo: true,
-                repeat: -1,
-                ease: 'Sine.easeInOut'
-            });
-
-            // Логика клика
-            mainButton.on('pointerdown', (pointer) => {
-                // 1. Увеличиваем баланс
-                balance += 1;
-                updateBalanceUI();
-                localStorage.setItem('balance', balance);
-
-                // 2. Анимация нажатия
-                this.tweens.add({
-                    targets: mainButton,
-                    scale: 0.7,
-                    duration: 50,
-                    yoyo: true,
-                    ease: 'Power1'
-                });
-
-                // 3. Вылет текста +1
-                const floatingText = this.add.text(pointer.x, pointer.y - 50, "+1", {
-                    fontSize: '40px',
-                    color: '#00ffaa',
-                    fontStyle: 'bold'
-                });
-                
-                this.tweens.add({
-                    targets: floatingText,
-                    y: pointer.y - 150,
-                    alpha: 0,
-                    duration: 800,
-                    onComplete: () => floatingText.destroy()
-                });
-
-                // 4. Эффект частиц
-                const emitter = this.add.particles(pointer.x, pointer.y, 'particle', {
-                    speed: { min: -100, max: 100 },
-                    angle: { min: 0, max: 360 },
-                    scale: { start: 0.1, end: 0 },
-                    blendMode: 'ADD',
-                    lifespan: 500,
-                    gravityY: 0,
-                    quantity: 5
-                });
-                setTimeout(() => emitter.destroy(), 500);
-
-                // 5. Вибрация (Haptic)
-                if (tg.HapticFeedback) {
-                    tg.HapticFeedback.impactOccurred('light');
-                }
-            });
-        }
-
-        function updateBalanceUI() {
-            document.getElementById('user-balance').innerText = balance.toLocaleString() + " $CC";
-        }
-
-        // Подгонка размера при повороте экрана
-        window.addEventListener('resize', () => {
-            game.scale.resize(window.innerWidth, window.innerHeight);
+        // Настройка системы частиц (Cyberpunk Style)
+        particles = this.add.particles(0, 0, 'spark', {
+            speed: { min: -200, max: 200 },
+            angle: { min: 0, max: 360 },
+            scale: { start: 0.4, end: 0 },
+            blendMode: 'ADD',
+            lifespan: 600,
+            gravityY: 400,
+            emitting: false
         });
-    </script>
+
+        // Основной объект взаимодействия
+        coin = this.add.sprite(width / 2, height / 2 + 50, 'coin')
+            .setInteractive()
+            .setScale(0.5);
+
+        // Плавное вращение и левитация
+        this.tweens.add({
+            targets: coin,
+            y: height / 2 + 30,
+            duration: 2000,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+
+        // Обработка клика
+        coin.on('pointerdown', (pointer) => {
+            handleTap(pointer.x, pointer.y);
+            
+            // Визуальный отклик
+            this.tweens.add({
+                targets: coin,
+                scale: 0.45,
+                duration: 50,
+                yoyo: true
+            });
+            
+            particles.emitParticleAt(pointer.x, pointer.y, 10);
+            showClickText(this, pointer.x, pointer.y);
+        });
+
+        // Приветствие пользователя
+        document.getElementById('user-display').innerText = `@${tg.initDataUnsafe.user?.username || 'CyberMiner'}`;
+    }
+
+    function update(time, delta) {
+        // Пассивный доход (расчет реального времени)
+        if (state.autoPower > 0) {
+            const now = Date.now();
+            const diff = (now - state.lastTick) / 1000;
+            state.balance += state.autoPower * diff;
+            state.lastTick = now;
+            updateUI();
+        }
+    }
+
+    function handleTap(x, y) {
+        state.balance += state.clickPower;
+        updateUI();
+        if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+    }
+
+    function showClickText(scene, x, y) {
+        const txt = scene.add.text(x, y - 40, `+${state.clickPower}`, {
+            fontSize: '32px', fontStyle: 'bold', color: '#00f2ff'
+        });
+        scene.tweens.add({
+            targets: txt, y: y - 120, alpha: 0, duration: 600,
+            onComplete: () => txt.destroy()
+        });
+    }
+
+    function updateUI() {
+        document.getElementById('balance').innerText = Math.floor(state.balance).toLocaleString();
+        document.getElementById('pps').innerText = `PROFITS: +${state.autoPower.toFixed(1)}/s`;
+        
+        // Сохранение (в идеале делать через API на сервер)
+        localStorage.setItem('bal', state.balance);
+    }
+
+    // Система апгрейдов
+    window.upgrade = (type) => {
+        if (type === 'click' && state.balance >= 50) {
+            state.balance -= 50;
+            state.clickPower += 1;
+            tg.showAlert('Tap Power Upgraded!');
+        } else if (type === 'auto' && state.balance >= 200) {
+            state.balance -= 200;
+            state.autoPower += 0.5;
+            tg.showAlert('Mining Drone Active!');
+        } else {
+            tg.HapticFeedback.notificationOccurred('error');
+        }
+        updateUI();
+    };
+</script>
 </body>
 </html>
