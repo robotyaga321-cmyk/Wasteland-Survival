@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Wasteland Scavenger</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            font-family: 'Roboto Mono', monospace;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        #game-container {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+        }
+
+        #stats {
+            display: flex;
+            justify-content: space-around;
+            background: #282846;
+            padding: 10px;
+            border-bottom: 1px solid #3a3a5e;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        .stat-item {
+            text-align: center;
+            flex: 1;
+        }
+        .stat-value {
+            font-weight: bold;
+            color: #00ffaa;
+        }
+
+        #game-log {
+            background: #0f0f1f;
+            border: 1px solid #3a3a5e;
+            padding: 10px;
+            height: 150px;
+            overflow-y: auto;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #b0b0b0;
+        }
+        .log-message {
+            margin-bottom: 5px;
+        }
+        .log-event { color: #00ffaa; }
+        .log-danger { color: #ff5555; }
+        .log-info { color: #88ddff; }
+
+        #main-display {
+            flex-grow: 1;
+            background: #1a1a2e;
+            border: 1px solid #3a3a5e;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            font-size: 16px;
+        }
+        #current-location {
+            font-size: 20px;
+            font-weight: bold;
+            color: #e0e0e0;
+            margin-bottom: 10px;
+        }
+        #location-desc {
+            color: #b0b0b0;
+        }
+        #location-image {
+            width: 80px;
+            height: 80px;
+            background-color: #3a3a5e;
+            border-radius: 12px;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 40px;
+        }
+
+        #actions {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .action-btn {
+            background: #0088cc;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 15px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .action-btn:hover { background: #00aaff; }
+        .action-btn:disabled { background: #3a3a5e; cursor: not-allowed; }
+
+        #inventory {
+            background: #282846;
+            padding: 10px;
+            border-top: 1px solid #3a3a5e;
+            font-size: 13px;
+            border-radius: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .inventory-item {
+            background: #3a3a5e;
+            padding: 5px 8px;
+            border-radius: 5px;
+            color: #ddd;
+            display: flex;
+            align-items: center;
+        }
+        .item-icon { margin-right: 5px; }
+        .item-count { margin-left: 5px; color: #00ffaa; }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="stats">
+            <div class="stat-item">HP: <span id="hp-val" class="stat-value">100</span></div>
+            <div class="stat-item">Energy: <span id="energy-val" class="stat-value">100</span></div>
+            <div class="stat-item">Water: <span id="water-val" class="stat-value">100</span></div>
+            <div class="stat-item">Food: <span id="food-val" class="stat-value">100</span></div>
+        </div>
+
+        <div id="game-log"></div>
+
+        <div id="main-display">
+            <div id="location-image">?</div>
+            <div id="current-location">Loading...</div>
+            <div id="location-desc">Welcome to the Wasteland.</div>
+        </div>
+
+        <div id="actions">
+            <button class="action-btn" id="explore-btn">🗺️ Explore</button>
+            <button class="action-btn" id="scavenge-btn">🔍 Scavenge</button>
+            <button class="action-btn" id="rest-btn">⛺ Rest</button>
+            <button class="action-btn" id="craft-btn">🔨 Craft</button>
+        </div>
+
+        <div id="inventory">
+            <span style="color:#888;">Inventory:</span>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.enableClosingConfirmation();
+
+        // --- Game State (Состояние игры) ---
+        let player = {
+            hp: 100,
+            maxHp: 100,
+            energy: 100,
+            maxEnergy: 100,
+            water: 100,
+            maxWater: 100,
+            food: 100,
+            maxFood: 100,
+            inventory: {
+                'scrap': 0,
+                'water_bottle': 0,
+                'mutant_meat': 0,
+                'medkit': 0
+            },
+            currentLocation: 'starting_zone',
+            day: 1
+        };
+
+        const locations = {
+            'starting_zone': { name: 'Abandoned Outpost', desc: 'A ruined outpost, some scraps might remain.', icon: '🏚️' },
+            'dry_riverbed': { name: 'Dry Riverbed', desc: 'A long-forgotten river, maybe some rare minerals here.', icon: '💀' },
+            'irradiated_forest': { name: 'Irradiated Forest', desc: 'Strange mutated flora and fauna. Danger.', icon: '🌳' },
+            'ruined_city': { name: 'Ruined City', desc: 'Collapsed skyscrapers, dangerous but resource-rich.', icon: '🏢' }
+        };
+
+        const craftRecipes = {
+            'water_bottle': { requires: { 'scrap': 2 }, makes: { 'water_bottle': 1 }, energyCost: 5, successMsg: 'Crafted a water bottle!' },
+            'medkit': { requires: { 'scrap': 3, 'mutant_meat': 1 }, makes: { 'medkit': 1 }, energyCost: 10, successMsg: 'Assembled a basic medkit.' }
+        };
+
+        // --- UI Elements (Элементы интерфейса) ---
+        const hpVal = document.getElementById('hp-val');
+        const energyVal = document.getElementById('energy-val');
+        const waterVal = document.getElementById('water-val');
+        const foodVal = document.getElementById('food-val');
+        const gameLog = document.getElementById('game-log');
+        const mainDisplay = document.getElementById('main-display');
+        const currentLocationEl = document.getElementById('current-location');
+        const locationDescEl = document.getElementById('location-desc');
+        const locationImageEl = document.getElementById('location-image');
+        const actionsDiv = document.getElementById('actions');
+        const inventoryDiv = document.getElementById('inventory');
+
+        // --- Game Functions (Игровые функции) ---
+
+        function updateUI() {
+            hpVal.innerText = player.hp;
+            energyVal.innerText = player.energy;
+            waterVal.innerText = player.water;
+            foodVal.innerText = player.food;
+
+            const loc = locations[player.currentLocation];
+            currentLocationEl.innerText = loc.name;
+            locationDescEl.innerText = loc.desc;
+            locationImageEl.innerText = loc.icon;
+
+            // Обновление инвентаря
+            let invHTML = '<span style="color:#888;">Inventory:</span>';
+            for (const item in player.inventory) {
+                if (player.inventory[item] > 0) {
+                    const itemIcon = getItemIcon(item);
+                    invHTML += `<div class="inventory-item"><span class="item-icon">${itemIcon}</span>${item}<span class="item-count">x${player.inventory[item]}</span></div>`;
+                }
+            }
+            inventoryDiv.innerHTML = invHTML;
+
+            // Обновление кнопок (отключить, если нет энергии/ресурсов)
+            document.getElementById('explore-btn').disabled = player.energy < 10;
+            document.getElementById('scavenge-btn').disabled = player.energy < 5;
+            document.getElementById('rest-btn').disabled = player.energy >= player.maxEnergy;
+            document.getElementById('craft-btn').disabled = !canCraftAnything(); // Отключаем, если ничего нельзя скрафтить
+        }
+
+        function logMessage(message, type = 'log-info') {
+            const msgEl = document.createElement('div');
+            msgEl.classList.add('log-message', type);
+            msgEl.innerText = message;
+            gameLog.prepend(msgEl); // Добавляем в начало
+            if (gameLog.children.length > 50) gameLog.lastChild.remove(); // Ограничиваем лог
+        }
+
+        function consumeResources(energyCost, waterCost = 10, foodCost = 10) {
+            player.energy -= energyCost;
+            player.water -= waterCost;
+            player.food -= foodCost;
+
+            if (player.energy < 0) player.energy = 0;
+            if (player.water < 0) player.water = 0;
+            if (player.food < 0) player.food = 0;
+            
+            checkSurvivalConditions();
+        }
+
+        function checkSurvivalConditions() {
+            if (player.water === 0) {
+                player.hp -= 5;
+                logMessage('You are dehydrated! Losing HP.', 'log-danger');
+            }
+            if (player.food === 0) {
+                player.hp -= 5;
+                logMessage('You are starving! Losing HP.', 'log-danger');
+            }
+            if (player.hp <= 0) {
+                gameOver();
+            }
+            player.hp = Math.min(player.hp, player.maxHp); // Не превышать максимум
+            player.energy = Math.min(player.energy, player.maxEnergy);
+            player.water = Math.min(player.water, player.maxWater);
+            player.food = Math.min(player.food, player.maxFood);
+        }
+
+        function gameOver() {
+            logMessage(`--- GAME OVER --- You survived for ${player.day} days.`, 'log-danger');
+            actionsDiv.innerHTML = '<button class="action-btn" onclick="restartGame()">Restart</button>';
+            tg.HapticFeedback.notificationOccurred('error');
+        }
+
+        function restartGame() {
+            localStorage.clear(); // Сбросить все сохранения
+            location.reload(); // Перезагрузить страницу
+        }
+
+        function getItemIcon(item) {
+            switch(item) {
+                case 'scrap': return '⚙️';
+                case 'water_bottle': return '💧';
+                case 'mutant_meat': return '🥩';
+                case 'medkit': return '🩹';
+                default: return '❓';
+            }
+        }
+        
+        function canCraftAnything() {
+            for (const recipeName in craftRecipes) {
+                const recipe = craftRecipes[recipeName];
+                let canMake = true;
+                for (const reqItem in recipe.requires) {
+                    if (player.inventory[reqItem] < recipe.requires[reqItem]) {
+                        canMake = false;
+                        break;
+                    }
+                }
+                if (canMake) return true;
+            }
+            return false;
+        }
+
+        // --- Actions (Действия игрока) ---
+
+        document.getElementById('explore-btn').onclick = () => {
+            if (player.energy < 10) { logMessage('Not enough energy to explore!', 'log-danger'); return; }
+            consumeResources(10);
+            tg.HapticFeedback.impactOccurred('medium');
+
+            logMessage('You ventured into the unknown...', 'log-event');
+            
+            // Случайная смена локации
+            const newLocs = Object.keys(locations).filter(loc => loc !== player.currentLocation);
+            player.currentLocation = newLocs[Math.floor(Math.random() * newLocs.length)];
+
+            // Случайное событие
+            const eventRoll = Math.random();
+            if (eventRoll < 0.3) { // Нашли что-то
+                const itemFound = Math.random() < 0.5 ? 'scrap' : 'mutant_meat';
+                const amount = Math.floor(Math.random() * 3) + 1;
+                player.inventory[itemFound] += amount;
+                logMessage(`Found ${amount} ${getItemIcon(itemFound)} ${itemFound}!`, 'log-event');
+            } else if (eventRoll < 0.5) { // Враг
+                const damage = Math.floor(Math.random() * 20) + 10;
+                player.hp -= damage;
+                logMessage(`A mutated creature attacked! Lost ${damage} HP.`, 'log-danger');
+            } else { // Ничего
+                logMessage('Found nothing of interest.', 'log-info');
+            }
+            
+            updateUI();
+        };
+
+        document.getElementById('scavenge-btn').onclick = () => {
+            if (player.energy < 5) { logMessage('Too tired to scavenge!', 'log-danger'); return; }
+            consumeResources(5);
+            tg.HapticFeedback.impactOccurred('light');
+
+            logMessage('You meticulously searched the area.', 'log-event');
+            
+            const scrapFound = Math.floor(Math.random() * 5) + 1;
+            player.inventory['scrap'] += scrapFound;
+            logMessage(`Found ${scrapFound} ⚙️ scrap!`, 'log-event');
+            
+            updateUI();
+        };
+
+        document.getElementById('rest-btn').onclick = () => {
+            if (player.energy >= player.maxEnergy) { logMessage('You are already fully rested!', 'log-info'); return; }
+            consumeResources(0, 5, 5); // Только вода и еда
+            tg.HapticFeedback.impactOccurred('medium');
+
+            const energyRestored = Math.min(50, player.maxEnergy - player.energy);
+            player.energy += energyRestored;
+            player.hp += 10; // Немного HP восстанавливается
+            player.day++;
+
+            logMessage(`You rested for the day. Energy +${energyRestored}, HP +10. Day ${player.day}.`, 'log-event');
+            updateUI();
+        };
+
+        document.getElementById('craft-btn').onclick = () => {
+            let craftOptions = '';
+            for (const recipeName in craftRecipes) {
+                const recipe = craftRecipes[recipeName];
+                let canMake = true;
+                let reqString = [];
+                for (const reqItem in recipe.requires) {
+                    reqString.push(`${recipe.requires[reqItem]} ${getItemIcon(reqItem)} ${reqItem}`);
+                    if (player.inventory[reqItem] < recipe.requires[reqItem]) {
+                        canMake = false;
+                    }
+                }
+                const makeItem = Object.keys(recipe.makes)[0];
+                const makeCount = recipe.makes[makeItem];
+                
+                craftOptions += `<button class="action-btn" ${!canMake ? 'disabled' : ''} onclick="performCraft('${recipeName}')">
+                                    Craft ${makeCount} ${getItemIcon(makeItem)} ${makeItem} (Cost: ${reqString.join(', ')})
+                                </button>`;
+            }
+            
+            // Заменяем кнопки действий на кнопки крафта временно
+            actionsDiv.innerHTML = craftOptions + `<button class="action-btn" onclick="hideCraftOptions()">Back</button>`;
+        };
+
+        function performCraft(recipeName) {
+            const recipe = craftRecipes[recipeName];
+            if (!recipe) return;
+
+            // Проверка ресурсов
+            for (const reqItem in recipe.requires) {
+                if (player.inventory[reqItem] < recipe.requires[reqItem]) {
+                    logMessage(`Not enough ${getItemIcon(reqItem)} ${reqItem} to craft!`, 'log-danger');
+                    tg.HapticFeedback.notificationOccurred('error');
+                    return;
+                }
+            }
+            if (player.energy < recipe.energyCost) {
+                logMessage('Not enough energy to craft!', 'log-danger');
+                tg.HapticFeedback.notificationOccurred('error');
+                return;
+            }
+
+            // Тратим ресурсы
+            for (const reqItem in recipe.requires) {
+                player.inventory[reqItem] -= recipe.requires[reqItem];
+            }
+            player.energy -= recipe.energyCost;
+
+            // Создаем предмет
+            for (const makeItem in recipe.makes) {
+                player.inventory[makeItem] += recipe.makes[makeItem];
+            }
+            logMessage(recipe.successMsg, 'log-event');
+            tg.HapticFeedback.impactOccurred('heavy');
+            hideCraftOptions(); // Возвращаем обычные кнопки
+            updateUI();
+        }
+
+        function hideCraftOptions() {
+            actionsDiv.innerHTML = `
+                <button class="action-btn" id="explore-btn">🗺️ Explore</button>
+                <button class="action-btn" id="scavenge-btn">🔍 Scavenge</button>
+                <button class="action-btn" id="rest-btn">⛺ Rest</button>
+                <button class="action-btn" id="craft-btn">🔨 Craft</button>
+            `;
+            // Перепривязка обработчиков
+            document.getElementById('explore-btn').onclick = actions.explore;
+            document.getElementById('scavenge-btn').onclick = actions.scavenge;
+            document.getElementById('rest-btn').onclick = actions.rest;
+            document.getElementById('craft-btn').onclick = actions.craft;
+            updateUI();
+        }
+
+
+        // --- Save/Load (Сохранение/Загрузка) ---
+        function saveGame() {
+            localStorage.setItem('wasteland_savestate', JSON.stringify(player));
+            logMessage('Game saved!', 'log-info');
+        }
+
+        function loadGame() {
+            const savedState = localStorage.getItem('wasteland_savestate');
+            if (savedState) {
+                player = JSON.parse(savedState);
+                logMessage('Game loaded!', 'log-info');
+            } else {
+                logMessage('No saved game found. Starting new game.', 'log-info');
+            }
+        }
+
+        // --- Initialization (Инициализация) ---
+        loadGame();
+        updateUI();
+
+        // Автоматическое сохранение каждые 30 секунд
+        setInterval(saveGame, 30000);
+        // Ежедневный расход ресурсов
+        setInterval(checkSurvivalConditions, 60000); // Раз в минуту проверяем на голод/жажду
+
+        // Перепривязка обработчиков после загрузки (т.к. кнопки динамически меняются)
+        // Для упрощения, обработчики привязаны напрямую в HTML (onclick), 
+        // но при динамической замене их нужно привязывать заново.
+        // В этом случае они переопределяются при вызове hideCraftOptions
+        
+        // Переинициализируем обработчики для кнопок после загрузки игры, если они были заменены.
+        // Это костыль, но для SPA без фреймворков это рабочий вариант.
+        document.getElementById('explore-btn').onclick = () => {
+            if (player.energy < 10) { logMessage('Not enough energy to explore!', 'log-danger'); return; }
+            consumeResources(10);
+            tg.HapticFeedback.impactOccurred('medium');
+
+            logMessage('You ventured into the unknown...', 'log-event');
+            
+            const newLocs = Object.keys(locations).filter(loc => loc !== player.currentLocation);
+            player.currentLocation = newLocs[Math.floor(Math.random() * newLocs.length)];
+
+            const eventRoll = Math.random();
+            if (eventRoll < 0.3) { 
+                const itemFound = Math.random() < 0.5 ? 'scrap' : 'mutant_meat';
+                const amount = Math.floor(Math.random() * 3) + 1;
+                player.inventory[itemFound] += amount;
+                logMessage(`Found ${amount} ${getItemIcon(itemFound)} ${itemFound}!`, 'log-event');
+            } else if (eventRoll < 0.5) { 
+                const damage = Math.floor(Math.random() * 20) + 10;
+                player.hp -= damage;
+                logMessage(`A mutated creature attacked! Lost ${damage} HP.`, 'log-danger');
+            } else { 
+                logMessage('Found nothing of interest.', 'log-info');
+            }
+            updateUI();
+        };
+
+        document.getElementById('scavenge-btn').onclick = () => {
+            if (player.energy < 5) { logMessage('Too tired to scavenge!', 'log-danger'); return; }
+            consumeResources(5);
+            tg.HapticFeedback.impactOccurred('light');
+
+            logMessage('You meticulously searched the area.', 'log-event');
+            
+            const scrapFound = Math.floor(Math.random() * 5) + 1;
+            player.inventory['scrap'] += scrapFound;
+            logMessage(`Found ${scrapFound} ⚙️ scrap!`, 'log-event');
+            
+            updateUI();
+        };
+
+        document.getElementById('rest-btn').onclick = () => {
+            if (player.energy >= player.maxEnergy) { logMessage('You are already fully rested!', 'log-info'); return; }
+            consumeResources(0, 5, 5);
+            tg.HapticFeedback.impactOccurred('medium');
+
+            const energyRestored = Math.min(50, player.maxEnergy - player.energy);
+            player.energy += energyRestored;
+            player.hp += 10;
+            player.day++;
+
+            logMessage(`You rested for the day. Energy +${energyRestored}, HP +10. Day ${player.day}.`, 'log-event');
+            updateUI();
+        };
+
+        document.getElementById('craft-btn').onclick = () => {
+            let craftOptions = '';
+            for (const recipeName in craftRecipes) {
+                const recipe = craftRecipes[recipeName];
+                let canMake = true;
+                let reqString = [];
+                for (const reqItem in recipe.requires) {
+                    reqString.push(`${recipe.requires[reqItem]} ${getItemIcon(reqItem)} ${reqItem}`);
+                    if (player.inventory[reqItem] < recipe.requires[reqItem]) {
+                        canMake = false;
+                    }
+                }
+                const makeItem = Object.keys(recipe.makes)[0];
+                const makeCount = recipe.makes[makeItem];
+                
+                craftOptions += `<button class="action-btn" ${!canMake ? 'disabled' : ''} onclick="performCraft('${recipeName}')">
+                                    Craft ${makeCount} ${getItemIcon(makeItem)} ${makeItem} (Cost: ${reqString.join(', ')})
+                                </button>`;
+            }
+            
+            actionsDiv.innerHTML = craftOptions + `<button class="action-btn" onclick="hideCraftOptions()">Back</button>`;
+        };
+
+    </script>
+</body>
+</html>
