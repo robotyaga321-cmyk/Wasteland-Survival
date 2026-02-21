@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Kingdom Evolution</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root { --grass: #4caf50; --wood-dark: #5d4037; --panel: #fffbe6; --gold: #f1c40f; }
+        
+        body { 
+            margin: 0; background: var(--grass); font-family: 'Segoe UI', sans-serif; 
+            overflow: hidden; color: var(--wood-dark); user-select: none;
+        }
+
+        /* Интерфейс ресурсов */
+        .top-bar { 
+            position: absolute; top: 50px; left: 0; width: 100%; 
+            display: flex; justify-content: center; gap: 15px; z-index: 10; 
+        }
+        .res-item { 
+            background: rgba(0,0,0,0.7); color: white; padding: 8px 15px; 
+            border-radius: 20px; font-weight: bold; border: 1px solid rgba(255,255,255,0.2);
+            display: flex; align-items: center; gap: 5px; min-width: 70px;
+        }
+
+        /* Карта и сетка */
+        #map { width: 100vw; height: 100vh; position: relative; }
+        
+        .building-slot { 
+            position: absolute; width: 90px; height: 90px; 
+            background: rgba(255,255,255,0.15); border: 2px dashed rgba(255,255,255,0.4); 
+            border-radius: 20px; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; transition: 0.2s;
+        }
+        .building-slot:active { transform: scale(0.95); }
+
+        /* Замок */
+        .castle-main { border: none; background: none; z-index: 5; }
+
+        /* Кнопки меню */
+        .ui-btn { 
+            position: absolute; bottom: 30px; width: 65px; height: 65px; 
+            background: #a1887f; border: 4px solid var(--wood-dark); border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; font-size: 30px; 
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3); z-index: 20;
+        }
+        .btn-bag { right: 20px; }
+        .btn-stats { left: 20px; }
+
+        /* Модальные окна */
+        .overlay { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.8); display: none; align-items: center; 
+            justify-content: center; z-index: 100; 
+        }
+        .window { 
+            background: var(--panel); width: 85%; border-radius: 30px; 
+            padding: 25px; border: 6px solid #d7ccc8; text-align: center;
+            box-shadow: 0 10px 0 #bcaaa4; animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        @keyframes pop { from { transform: scale(0.5); } to { transform: scale(1); } }
+
+        .card { 
+            background: white; border-radius: 15px; padding: 12px; margin-bottom: 10px;
+            display: flex; align-items: center; justify-content: space-between; border: 1px solid #ddd;
+        }
+        .action-btn { 
+            background: var(--grass); color: white; border: none; padding: 10px 15px; 
+            border-radius: 10px; font-weight: bold; 
+        }
+        .delete-btn { background: #e53935; width: 100%; margin-top: 15px; }
+
+        .lvl-badge { 
+            background: #ff9800; color: white; padding: 2px 8px; border-radius: 10px;
+            font-size: 12px; position: absolute; top: -10px; border: 2px solid white;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="top-bar">
+        <div class="res-item">🌾 <span id="food">0</span></div>
+        <div class="res-item">🪵 <span id="wood">0</span></div>
+        <div class="res-item">🌟 <span id="stars">0</span></div>
+    </div>
+
+    <div id="map">
+        <div class="building-slot castle-main" style="top:25%; left:38%;" onclick="openCastleMenu()">
+            <div class="lvl-badge" id="castle-lvl-tag">Ур.1</div>
+            <div style="font-size: 50px;">🏰</div>
+            <div style="font-size: 12px; font-weight: bold;">ЗАМОК</div>
+        </div>
+        
+        <div id="slot1" class="building-slot" style="top:50%; left:12%;" onclick="openSlotMenu('slot1')">+</div>
+        <div id="slot2" class="building-slot" style="top:50%; left:62%;" onclick="openSlotMenu('slot2')">+</div>
+        <div id="slot3" class="building-slot" style="top:70%; left:38%;" onclick="openSlotMenu('slot3')">+</div>
+    </div>
+
+    <div class="ui-btn btn-bag" onclick="openShop()">🎒</div>
+    <div class="ui-btn btn-stats" onclick="tg.showAlert('Версия 1.5: Королевство растет!')">📊</div>
+
+    <div id="modal" class="overlay">
+        <div class="window">
+            <h2 id="win-title" style="margin-top:0">Меню</h2>
+            <div id="win-content"></div>
+            <br>
+            <button class="action-btn" style="background:#90a4ae" onclick="closeWin()">ЗАКРЫТЬ</button>
+        </div>
+    </div>
+
+<script>
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+
+    // Состояние игры
+    let state = JSON.parse(localStorage.getItem('king_save')) || {
+        food: 100, wood: 100, stars: 0,
+        castleLvl: 1,
+        slots: {
+            slot1: { type: null, lvl: 0 },
+            slot2: { type: null, lvl: 0 },
+            slot3: { type: null, lvl: 0 }
+        }
+    };
+
+    // Таймер добычи
+    setInterval(() => {
+        Object.values(state.slots).forEach(s => {
+            if(s.type === 'farm') state.food += s.lvl * 3;
+            if(s.type === 'mine') state.wood += s.lvl * 3;
+        });
+        refreshUI();
+    }, 4000);
+
+    function openSlotMenu(id) {
+        const s = state.slots[id];
+        const content = document.getElementById('win-content');
+        const title = document.getElementById('win-title');
+        
+        if(!s.type) {
+            title.innerText = "Постройка";
+            content.innerHTML = `
+                <div class="card"><span>🌾 Ферма</span><button class="action-btn" onclick="build('${id}','farm')">50 🪵</button></div>
+                <div class="card"><span>🪵 Лесопилка</span><button class="action-btn" onclick="build('${id}','mine')">50 🌾</button></div>
+            `;
+        } else {
+            title.innerText = (s.type === 'farm' ? "Ферма" : "Лесопилка");
+            let upCost = (s.lvl + 1) * 80;
+            content.innerHTML = `
+                <p>Уровень: ${s.lvl} | Эффект: +${s.lvl * 3}/цикл</p>
+                <button class="action-btn" style="width:100%" onclick="upgrade('${id}', ${upCost})">УЛУЧШИТЬ (${upCost})</button>
+                <button class="action-btn delete-btn" onclick="destroy('${id}')">СНЕСТИ (-50%)</button>
+            `;
+        }
+        document.getElementById('modal').style.display = "flex";
+    }
+
+    function openCastleMenu() {
+        const title = document.getElementById('win-title');
+        const content = document.getElementById('win-content');
+        title.innerText = "Замок";
+        let upCost = state.castleLvl * 250;
+        content.innerHTML = `
+            <p>Уровень Замка определяет макс. уровень других зданий.</p>
+            <button class="action-btn" style="width:100%" onclick="upgradeCastle(${upCost})">УЛУЧШИТЬ ДО УР.${state.castleLvl+1}<br>(${upCost} 🌾 & 🪵)</button>
+        `;
+        document.getElementById('modal').style.display = "flex";
+    }
+
+    function build(id, type) {
+        let cost = 50;
+        let res = (type === 'farm') ? 'wood' : 'food';
+        if(state[res] >= cost) {
+            state[res] -= cost;
+            state.slots[id] = { type: type, lvl: 1 };
+            tg.HapticFeedback.notificationOccurred('success');
+            closeWin(); refreshUI();
+        } else { tg.showAlert("Недостаточно ресурсов!"); }
+    }
+
+    function upgrade(id, cost) {
+        if(state.slots[id].lvl >= state.castleLvl) {
+            tg.showAlert("Сначала улучши Замок!");
+            return;
+        }
+        if(state.wood >= cost) {
+            state.wood -= cost;
+            state.slots[id].lvl++;
+            tg.HapticFeedback.impactOccurred('medium');
+            closeWin(); refreshUI();
+        } else { tg.showAlert("Мало дерева!"); }
+    }
+
+    function upgradeCastle(cost) {
+        if(state.food >= cost && state.wood >= cost) {
+            state.food -= cost;
+            state.wood -= cost;
+            state.castleLvl++;
+            closeWin(); refreshUI();
+        } else { tg.showAlert("Мало ресурсов для Замка!"); }
+    }
+
+    function destroy(id) {
+        if(confirm("Снести здание?")) {
+            state.slots[id] = { type: null, lvl: 0 };
+            state.wood += 25;
+            closeWin(); refreshUI();
+        }
+    }
+
+    function openShop() {
+        const title = document.getElementById('win-title');
+        const content = document.getElementById('win-content');
+        title.innerText = "Магазин Звезд";
+        content.innerHTML = `
+            <div class="card"><span>⭐ 2000 🪵</span><button class="action-btn" style="background:var(--gold); color:black" onclick="buyRes('wood')">5 🌟</button></div>
+            <div class="card"><span>⭐ 2000 🌾</span><button class="action-btn" style="background:var(--gold); color:black" onclick="buyRes('food')">5 🌟</button></div>
+        `;
+        document.getElementById('modal').style.display = "flex";
+    }
+
+    function buyRes(res) {
+        // Здесь будет вызов платежа Телеграм. Пока просто добавляем.
+        state[res] += 2000;
+        tg.showAlert("Ресурсы получены!");
+        refreshUI();
+    }
+
+    function closeWin() { document.getElementById('modal').style.display = "none"; }
+
+    function refreshUI() {
+        localStorage.setItem('king_save', JSON.stringify(state));
+        document.getElementById('food').innerText = Math.floor(state.food);
+        document.getElementById('wood').innerText = Math.floor(state.wood);
+        document.getElementById('castle-lvl-tag').innerText = "Ур." + state.castleLvl;
+        
+        for(let id in state.slots) {
+            let s = state.slots[id];
+            let el = document.getElementById(id);
+            if(s.type) {
+                let icon = (s.type === 'farm') ? '🌾' : '🪚';
+                el.innerHTML = `<div class="lvl-badge">Ур.${s.lvl}</div><div style="font-size:40px">${icon}</div>`;
+                el.style.background = "white";
+                el.style.border = "none";
+            } else {
+                el.innerHTML = "+";
+                el.style.background = "rgba(255,255,255,0.15)";
+                el.style.border = "2px dashed rgba(255,255,255,0.4)";
+            }
+        }
+    }
+
+    refreshUI();
+</script>
+</body>
+</html>
