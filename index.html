@@ -3,42 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Wasteland Survival RPG</title>
+    <title>Wasteland Survival</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { margin: 0; background: #1a1a1a; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+        body { margin: 0; background: #1a1a1a; overflow: hidden; font-family: sans-serif; }
         canvas { display: block; touch-action: none; }
         
-        /* Панель игрока сверху */
+        /* Сдвигаем иконки ниже, чтобы не мешали кнопке "Закрыть" */
         .ui-top {
-            position: absolute; top: 15px; left: 15px; right: 15px;
+            position: absolute; top: 60px; left: 15px; right: 15px;
             display: flex; justify-content: space-between; pointer-events: none;
+            z-index: 100;
         }
         .stat-box {
-            background: rgba(0,0,0,0.8); padding: 10px 15px;
-            border-radius: 12px; border: 1px solid #333; color: #fff;
+            background: rgba(0,0,0,0.8); padding: 8px 12px;
+            border-radius: 10px; border: 1px solid #444; color: #fff; font-size: 14px;
         }
         .res-val { color: #f1c40f; font-weight: bold; }
 
-        /* Кнопка магазина снизу */
         .shop-area {
             position: absolute; bottom: 30px; width: 100%;
-            display: flex; justify-content: center;
+            display: flex; justify-content: center; z-index: 100;
         }
         .buy-btn {
             background: linear-gradient(180deg, #f1c40f 0%, #d35400 100%);
-            border: none; padding: 15px 30px; border-radius: 50px;
+            border: none; padding: 15px 25px; border-radius: 50px;
             color: #000; font-weight: bold; font-size: 16px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5); cursor: pointer;
-            pointer-events: auto;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
         }
-        .buy-btn:active { transform: scale(0.95); }
     </style>
 </head>
 <body>
 
 <div class="ui-top">
-    <div class="stat-box">🎒 Ресурсы: <span id="res-count" class="res-val">0</span></div>
+    <div class="stat-box">🎒 <span id="res-count" class="res-val">0</span></div>
     <div class="stat-box">👤 <span id="user-name">Player</span></div>
 </div>
 
@@ -49,224 +47,91 @@
 </div>
 
 <script>
-      const tg = window.Telegram.WebApp;
-    tg.expand();
-    
-    const canvas = document.getElementById('game');
-    const ctx = canvas.getContext('2d');
-    const resDisplay = document.getElementById('res-count');
-    
-    document.getElementById('user-name').innerText = tg.initDataUnsafe.user?.first_name || "Survivor";
-
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-
-    let resources = parseInt(localStorage.getItem('rpg_res')) || 0;
-    resDisplay.innerText = resources;
-
-    let player = {
-        x: canvas.width / 2, y: canvas.height / 2,
-        targetX: canvas.width / 2, targetY: canvas.height / 2,
-        size: 25, color: '#3498db', speed: 0.08, hp: 100
-    };
-
-    // Массивы для игровых объектов
-    let worldObjects = []; // Кусты с ресурсами
-    let enemies = [];      // Враги
-
-    // Создаем кусты ресурсов один раз
-    function spawnResources() {
-        for(let i=0; i<15; i++) {
-            worldObjects.push({
-                x: Math.random() * canvas.width,
-                y: Math.random() * canvas.height,
-                collected: false
-            });
-        }
-    }
-
-    // Создаем врагов
-    function spawnEnemies() {
-        for(let i=0; i<3; i++) {
-            enemies.push({
-                x: Math.random() * canvas.width,
-                y: Math.random() * canvas.height,
-                speed: 0.5 + Math.random()
-            });
-        }
-    }
-
-    function draw() {
-        // 1. Фон
-        ctx.fillStyle = '#1e272e';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // 2. Отрисовка ресурсов (Кусты)
-        worldObjects.forEach(obj => {
-            if(!obj.collected) {
-                ctx.fillStyle = '#27ae60';
-                ctx.beginPath();
-                ctx.arc(obj.x, obj.y, 10, 0, Math.PI*2);
-                ctx.fill();
-
-                // Проверка столкновения (сбор)
-                let dist = Math.hypot(player.x - obj.x, player.y - obj.y);
-                if(dist < 20) {
-                    obj.collected = true;
-                    resources += 10;
-                    resDisplay.innerText = resources;
-                    localStorage.setItem('rpg_res', resources);
-                    if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('soft');
-                }
-            }
-        });
-
-        // 3. Отрисовка и AI врагов
-        enemies.forEach(enemy => {
-            // Враг медленно идет к игроку
-            let dx = player.x - enemy.x;
-            let dy = player.y - enemy.y;
-            let angle = Math.atan2(dy, dx);
-            enemy.x += Math.cos(angle) * enemy.speed;
-            enemy.y += Math.sin(angle) * enemy.speed;
-
-            ctx.fillStyle = '#e74c3c';
-            ctx.fillRect(enemy.x, enemy.y, 20, 20);
-
-            // Урон игроку
-            if(Math.hypot(player.x - enemy.x, player.y - enemy.y) < 20) {
-                player.hp -= 0.1; // Плавное уменьшение HP
-                if(player.hp < 0) {
-                    alert("Вы погибли! Ресурсы потеряны.");
-                    resources = 0; player.hp = 100;
-                    location.reload();
-                }
-            }
-        });
-
-        // 4. Движение игрока
-        player.x += (player.targetX - player.x) * player.speed;
-        player.y += (player.targetY - player.y) * player.speed;
-
-        // Рисуем игрока
-        ctx.fillStyle = player.color;
-        ctx.fillRect(player.x, player.y, player.size, player.size);
-
-        // 5. Виньетка (эффект темноты вокруг)
-        let gradient = ctx.createRadialGradient(
-            player.x + 12, player.y + 12, 50, 
-            player.x + 12, player.y + 12, 250
-        );
-        gradient.addColorStop(0, 'rgba(0,0,0,0)');
-        gradient.addColorStop(1, 'rgba(0,0,0,0.8)');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        requestAnimationFrame(draw);
-    }
-
-    window.addEventListener('pointerdown', (e) => {
-        if (e.target.tagName === 'BUTTON') return;
-        player.targetX = e.clientX - 12;
-        player.targetY = e.clientY - 12;
-    });
-
-    function requestPurchase() {
-        tg.sendData("buy_100_res");
-    }
-
-    spawnResources();
-    spawnEnemies();
-    draw();
-
     const tg = window.Telegram.WebApp;
     tg.expand();
     
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
-    const resDisplay = document.getElementById('res-count');
     
-    // Имя игрока из Telegram
-    document.getElementById('user-name').innerText = tg.initDataUnsafe.user?.first_name || "Survivor";
-
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
-    let resources = parseInt(localStorage.getItem('rpg_res')) || 0;
-    resDisplay.innerText = resources;
+    document.getElementById('user-name').innerText = tg.initDataUnsafe.user?.first_name || "Survivor";
 
-    // Параметры игрока
+    let resources = parseInt(localStorage.getItem('rpg_res')) || 0;
+    document.getElementById('res-count').innerText = resources;
+
     let player = {
-        x: canvas.width / 2,
-        y: canvas.height / 2,
-        targetX: canvas.width / 2,
-        targetY: canvas.height / 2,
-        size: 30,
-        color: '#3498db',
-        speed: 0.1 // Плавность (чем меньше, тем медленнее)
+        x: canvas.width / 2, y: canvas.height / 2,
+        targetX: canvas.width / 2, targetY: canvas.height / 2,
+        size: 25, speed: 0.1
     };
 
-    // Отрисовка мира
+    let worldObjects = [];
+    // Спавним ресурсы ближе к центру, чтобы ты их сразу увидел
+    for(let i=0; i<20; i++) {
+        worldObjects.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            collected: false
+        });
+    }
+
     function draw() {
-        // Фоновая заливка
+        // Очистка экрана (Светло-серый пол, чтобы всё было видно)
         ctx.fillStyle = '#2c3e50';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Рисуем сетку "бесконечного мира"
+        // Сетка
         ctx.strokeStyle = '#34495e';
-        ctx.lineWidth = 1;
-        const gridSize = 50;
-        for (let x = 0; x < canvas.width; x += gridSize) {
-            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
-        }
-        for (let y = 0; y < canvas.height; y += gridSize) {
-            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+        for(let i=0; i<canvas.width; i+=50) {
+            ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,canvas.height); ctx.stroke();
         }
 
-        // Плавное движение (Lerp)
+        // Ресурсы (Зеленые кружки)
+        worldObjects.forEach(obj => {
+            if(!obj.collected) {
+                ctx.fillStyle = '#2ecc71';
+                ctx.beginPath(); ctx.arc(obj.x, obj.y, 8, 0, Math.PI*2); ctx.fill();
+
+                if(Math.hypot(player.x - obj.x, player.y - obj.y) < 20) {
+                    obj.collected = true;
+                    resources += 10;
+                    document.getElementById('res-count').innerText = resources;
+                    localStorage.setItem('rpg_res', resources);
+                    tg.HapticFeedback.impactOccurred('soft');
+                }
+            }
+        });
+
+        // Плавное движение игрока
         player.x += (player.targetX - player.x) * player.speed;
         player.y += (player.targetY - player.y) * player.speed;
 
-        // Тень персонажа
-        ctx.fillStyle = 'rgba(0,0,0,0.3)';
-        ctx.beginPath();
-        ctx.ellipse(player.x + 15, player.y + 35, 15, 7, 0, 0, Math.PI * 2);
-        ctx.fill();
+        // Рисуем игрока (Синий квадрат)
+        ctx.fillStyle = '#3498db';
+        ctx.fillRect(player.x - 12, player.y - 12, player.size, player.size);
 
-        // Персонаж
-        ctx.fillStyle = player.color;
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = player.color;
-        ctx.fillRect(player.x, player.y, player.size, player.size);
-        ctx.shadowBlur = 0; // Сброс тени для других объектов
+        // Удаляем виньетку или делаем её слабее, чтобы не было черного экрана
+        let grad = ctx.createRadialGradient(player.x, player.y, 100, player.x, player.y, 300);
+        grad.addColorStop(0, 'rgba(0,0,0,0)');
+        grad.addColorStop(1, 'rgba(0,0,0,0.4)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0,0, canvas.width, canvas.height);
 
         requestAnimationFrame(draw);
     }
 
-    // Обработка клика по экрану
     window.addEventListener('pointerdown', (e) => {
-        // Чтобы клик по кнопке не заставлял персонажа идти к ней
-        if (e.target.tagName === 'BUTTON') return;
-
-        player.targetX = e.clientX - player.size / 2;
-        player.targetY = e.clientY - player.size / 2;
-        
-        if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+        if(e.target.tagName !== 'BUTTON') {
+            player.targetX = e.clientX;
+            player.targetY = e.clientY;
+        }
     });
 
-    // Функция покупки
     function requestPurchase() {
-        if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('warning');
-        
-        // Отправка данных боту. Бот увидит это и пришлет счет на Звезды.
         tg.sendData("buy_100_res");
     }
-
-    // Подстройка под размер экрана при повороте
-    window.addEventListener('resize', () => {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-    });
 
     draw();
 </script>
